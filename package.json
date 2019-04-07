@@ -1,0 +1,25 @@
+{
+  "name": "code-along-challenge1",
+  "version": "1.0.0",
+  "description": "Solving distributed transaction problems with serverless",
+  "main": "handler.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "source-map-support": "^0.5.10",
+    "uuid": "^3.3.2"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.17",
+    "@types/node": "^10.12.18",
+    "serverless-pseudo-parameters": "^2.4.0",
+    "serverless-step-functions": "^1.17.0",
+    "serverless-webpack": "^5.2.0",
+    "ts-loader": "^5.3.3",
+    "typescript": "^3.2.4",
+    "webpack": "^4.29.0"
+  },
+  "author": "Dan Peterström",
+  "license": "MIT"
+}

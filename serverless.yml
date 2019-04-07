@@ -1,0 +1,138 @@
+service:
+  name: code-along-challenge1
+
+plugins:
+  - serverless-webpack
+  - serverless-step-functions
+  - serverless-pseudo-parameters
+provider:
+  name: aws
+  runtime: nodejs8.10
+  iamRoleStatements:
+    - Effect: "Allow"
+      Action:
+        - "states:StartExecution"
+        - "states:DescribeExecution"
+      Resource:
+        - "*"
+    - Effect: Allow
+      Action:
+        - dynamodb:DescribeTable
+        - dynamodb:Query
+        - dynamodb:Scan
+        - dynamodb:GetItem
+        - dynamodb:PutItem
+        - dynamodb:UpdateItem
+        - dynamodb:DeleteItem
+      Resource: "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/code-along-challenge1-*"
+
+functions:
+  order:
+    handler: handlers/order.placeOrder
+    environment:
+      statemachine_arn: ${self:resources.Outputs.OrderFlow.Value}
+    events:
+      - http:
+          method: post
+          path: order
+
+  orderReserver:
+    handler: handlers/orderReserver.reserveOrder
+    environment:
+      tableName: code-along-challenge1-orders
+
+  risk:
+    handler: handlers/risk.calculateRisk
+    environment:
+      tableName: code-along-challenge1-risks
+
+  orderRollback:
+    handler: handlers/orderRollback.rollback
+    environment:
+      tableName: code-along-challenge1-orders
+
+  riskRollback:
+    handler: handlers/riskRollback.rollback
+    environment:
+      tableName: code-along-challenge1-risks
+
+stepFunctions:
+  stateMachines:
+    placeOrderFlow:
+      name: PlaceOrderFlow
+      definition:
+        Comment: "Place an order and calculate risk"
+        StartAt: CalculateRisk
+        States:
+          CalculateRisk:
+            Type: Task
+            Resource: "arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-risk"
+            ResultPath: "$.risk"
+            Next: ReserveOrder
+            Catch:
+              - ErrorEquals: ["States.TaskFailed"]
+                ResultPath: "$.error-info"
+                Next: Rollback
+          ReserveOrder:
+            Type: Task
+            Resource: "arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-orderReserver"
+            ResultPath: "$.orderReserved"
+            End: true
+            Catch:
+              - ErrorEquals: ["States.TaskFailed"]
+                ResultPath: "$.error-info"
+                Next: Rollback
+          Rollback:
+            Type: Parallel
+            Next: FailState
+            Branches:
+              - StartAt: RollbackRisk
+                States:
+                  RollbackRisk:
+                    Type: Task
+                    Resource: "arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-riskRollback"
+                    End: true
+              - StartAt: RollbackOrder
+                States:
+                  RollbackOrder:
+                    Type: Task
+                    Resource: "arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-orderRollback"
+                    End: true
+          FailState:
+            Type: Fail
+            Cause: "Invalid response."
+            Error: "ErrorA"
+
+resources:
+  Outputs:
+    OrderFlow:
+      Description: The ARN of the placeOrderFlow
+      Value:
+        Ref: PlaceOrderFlow
+  Resources:
+    OrdersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: code-along-challenge1-orders
+        AttributeDefinitions:
+          - AttributeName: transactionId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: transactionId
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+    RisksTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: code-along-challenge1-risks
+        AttributeDefinitions:
+          - AttributeName: transactionId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: transactionId
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
